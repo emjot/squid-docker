@@ -14,7 +14,7 @@ resources:
       access_token: ((ci-gh-pr-token))
       ignore_paths:
         - "*.md"
-        - "pipeline*.yml"
+        - "pipelines/pipeline*.yml"
 
 jobs:
   - name: build-and-test
