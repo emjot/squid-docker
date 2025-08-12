@@ -1,0 +1,239 @@
+# This pipeline publishes and keeps the squid image up to date
+resource_types:
+  - name: cogito
+    type: registry-image
+    check_every: 1h
+    source:
+      repository: pix4d/cogito
+
+resources:
+  - name: github-status
+    type: cogito
+    icon: github
+    check_every: 1h
+    source:
+      context_prefix: 'concourse'
+      owner: emjot
+      repo: squid-docker
+      access_token: ((ci-gh-status-token))
+
+  - name: repo
+    type: git
+    icon: git
+    check_every: 30m
+    source:
+      uri: https://github.com/emjot/squid-docker
+      ignore_paths: [pipelines/pipeline.yml, pipelines/pipeline-pr.yml, README.md]
+
+  - name: weekly-rebuild
+    type: time
+    icon: clock
+    source:
+      days:
+        - Thursday
+      start: 3:00 AM
+      stop: 3:30 AM
+      location: Europe/Berlin
+      initial_version: true
+
+  - name: squid
+    icon: docker
+    type: registry-image
+    source:
+      repository: emjotde/squid
+      tag: latest
+      username: ((docker/username))
+      password: ((docker/password))
+
+jobs:
+  - name: build-and-publish
+    plan:
+      - in_parallel:
+          - get: repo
+            trigger: true
+          - get: weekly-rebuild
+            trigger: true
+      - in_parallel:
+          - put: github-status
+            no_get: true
+            inputs: [ repo ]
+            params: { context: 'build', state: pending }
+          - put: github-status
+            no_get: true
+            inputs: [ repo ]
+            params: { context: 'test', state: pending }
+          - put: github-status
+            no_get: true
+            inputs: [ repo ]
+            params: { context: 'publish', state: pending }
+
+      - task: build-for-version
+        privileged: true # oci-build-task must run in a privileged container
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: concourse/oci-build-task
+          inputs:
+            - name: repo
+          outputs:
+            - name: image
+          caches:
+            - path: cache
+          params:
+            CONTEXT: repo/
+            TARGET: print_latest_squid_version
+            UNPACK_ROOTFS: true
+          run:
+            path: build
+        output_mapping:
+          image: version-image
+      - task: latest-squid-version
+        image: version-image
+        config:
+          platform: linux
+          outputs:
+            - name: latest-squid-version
+            - name: alpine-version
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                /tools/print_latest_squid_version.sh > latest-squid-version/version
+                ls -la latest-squid-version
+                cat latest-squid-version/version | cut -d '.' -f 1 > latest-squid-version/major
+                cat latest-squid-version/version
+                cat latest-squid-version/major
+                cat /etc/alpine-release > alpine-version/version
+                cat alpine-version/version | cut -d '.' -f 1,2 > alpine-version/major-minor
+                cat alpine-version/version
+                cat alpine-version/major-minor
+      - in_parallel:
+          - load_var: squid-major
+            file: latest-squid-version/major
+          - load_var: alpine-major-minor
+            file: alpine-version/major-minor
+          - load_var: repo-version
+            file: repo/.git/describe_ref
+
+      - task: build-image
+        privileged: true
+        params:
+          TARGET: main
+          UNPACK_ROOTFS: true
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: concourse/oci-build-task
+          inputs:
+            - name: repo
+              path: .
+          outputs:
+            - name: image
+          caches:
+            - path: cache
+          run:
+            path: build
+        on_success:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'build', state: success }
+        on_failure:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'build', state: failure }
+        on_error:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'build', state: error }
+        on_abort:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'build', state: error }
+
+      - task: test # FIXME do some actual testing here - or remove
+        image: image
+        config:
+          platform: linux
+          run:
+            path: bash
+            args:
+              - -exc
+              - |
+                echo "foo"
+        on_success:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'test', state: success }
+        on_failure:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'test', state: failure }
+        on_error:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'test', state: error }
+        on_abort:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'test', state: error }
+
+      - task: tags
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          params:
+            SQUID_MAJOR: ((.:squid-major))
+            ALPINE_MAJOR_MINOR: ((.:alpine-major-minor))
+            REPO_VERSION: ((.:repo-version))
+          inputs:
+            - name: repo
+          outputs:
+            - name: tags
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                echo "${SQUID_MAJOR}-alpine${ALPINE_MAJOR_MINOR} ${SQUID_MAJOR}-alpine${ALPINE_MAJOR_MINOR}-$(date +%Y%m%d)" > tags/tags
+
+      - put: squid
+        inputs: detect
+        params:
+          image: image/image.tar
+          additional_tags: tags/tags
+        on_success:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'publish', state: success }
+        on_failure:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'publish', state: failure }
+        on_error:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'publish', state: error }
+        on_abort:
+          put: github-status
+          no_get: true
+          inputs: [ repo ]
+          params: { context: 'publish', state: error }

@@ -1,0 +1,85 @@
+# This pipeline publishes and keeps the squid image up to date
+resource_types:
+  - name: pull-request
+    type: docker-image
+    source:
+      repository: teliaoss/github-pr-resource
+
+resources:
+  - name: repo-pr
+    type: pull-request
+    icon: github
+    source:
+      repository: emjot/squid-docker
+      access_token: ((ci-gh-pr-token))
+      ignore_paths:
+        - "*.md"
+        - "pipeline*.yml"
+
+jobs:
+  - name: build-and-test
+    plan:
+      - in_parallel:
+        - get: repo-pr
+          trigger: true
+      - in_parallel:
+        - put: repo-pr
+          params: { path: repo-pr, context: 'build', status: pending }
+        - put: repo-pr
+          params: { path: repo-pr, context: 'test', status: pending }
+
+      - task: build
+        privileged: true
+        params:
+          TARGET: main
+          UNPACK_ROOTFS: true
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: concourse/oci-build-task
+          inputs:
+            - name: repo-pr
+              path: .
+          outputs:
+            - name: image
+          caches:
+            - path: cache
+          run:
+            path: build
+        on_success:
+          put: repo-pr
+          params: { path: repo-pr, context: 'build', status: success }
+        on_failure:
+          put: repo-pr
+          params: { path: repo-pr, context: 'build', status: failure }
+        on_error:
+          put: repo-pr
+          params: { path: repo-pr, context: 'build', status: error }
+        on_abort:
+          put: repo-pr
+          params: { path: repo-pr, context: 'build', status: error }
+
+      - task: test # FIXME do some actual testing here - or remove
+        image: image
+        config:
+          platform: linux
+          run:
+            path: bash
+            args:
+              - -exc
+              - |
+                echo "foo"
+        on_success:
+          put: repo-pr
+          params: { path: repo-pr, context: 'test', status: success }
+        on_failure:
+          put: repo-pr
+          params: { path: repo-pr, context: 'test', status: failure }
+        on_error:
+          put: repo-pr
+          params: { path: repo-pr, context: 'test', status: error }
+        on_abort:
+          put: repo-pr
+          params: { path: repo-pr, context: 'test', status: error }

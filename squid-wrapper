@@ -1,0 +1,68 @@
+#!/bin/sh
+set -e
+
+# Function to cleanup background processes
+cleanup() {
+    echo "Received signal, shutting down..."
+    if [ -n "$TAIL_PID" ]; then
+        kill $TAIL_PID 2>/dev/null || true
+    fi
+    if [ -n "$CACHE_TAIL_PID" ]; then
+        kill $CACHE_TAIL_PID 2>/dev/null || true
+    fi
+    if [ -n "$SQUID_PID" ]; then
+        kill $SQUID_PID 2>/dev/null || true
+    fi
+    exit 0
+}
+
+# Trap signals for proper cleanup
+trap cleanup TERM INT
+
+# Create log files if they don't exist
+touch /var/log/squid/access.log /var/log/squid/cache.log
+chown squid:squid /var/log/squid/access.log /var/log/squid/cache.log
+
+# Start Squid in background
+echo "Starting Squid..."
+squid -N -d1 &
+SQUID_PID=$!
+
+# Wait for Squid to start and check if it's running
+echo "Waiting for Squid to start..."
+for i in $(seq 1 10); do
+    if kill -0 $SQUID_PID 2>/dev/null; then
+        # Check if Squid is actually listening on port 3128
+        if netstat -ln | grep -q ":3128 "; then
+            break
+        fi
+    fi
+    sleep 1
+done
+
+if ! kill -0 $SQUID_PID 2>/dev/null; then
+    echo "ERROR: Squid failed to start"
+    exit 1
+fi
+
+echo "Squid started with PID $SQUID_PID"
+
+# Start tail processes for log streaming
+tail -f /var/log/squid/access.log &
+TAIL_PID=$!
+
+tail -f /var/log/squid/cache.log >&2 &
+CACHE_TAIL_PID=$!
+
+echo "Log streaming started"
+
+# Wait for Squid process and capture exit code
+wait $SQUID_PID
+EXIT_CODE=$?
+
+echo "Squid exited with code $EXIT_CODE"
+
+# Cleanup tail processes
+kill $TAIL_PID $CACHE_TAIL_PID 2>/dev/null || true
+
+exit $EXIT_CODE
