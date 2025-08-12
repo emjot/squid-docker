@@ -1,0 +1,6 @@
+.git
+
+# User / OS specific (should go into a user-specific dockerignore out of the project once this is supported)
+.idea
+.DS_Store
+_nogit
