@@ -2,7 +2,7 @@
 
 Docker image for squid based on the current alpine version.
 
-[<img src="https://concourse.emjot.de/api/v1/teams/emjot/pipelines/squid-docker/jobs/build-and-publish/badge">](https://concourse.emjot.de/teams/emjot/pipelines/squid-docker)
+[<img src="https://concourse.emjot.de/api/v1/teams/emjot/pipelines/squid/jobs/build-and-publish/badge">](https://concourse.emjot.de/teams/emjot/pipelines/squid)
 
 Images are published to https://hub.docker.com/repository/docker/emjotde/squid.
 
