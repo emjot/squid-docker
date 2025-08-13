@@ -1,11 +1,10 @@
 # squid-docker
 
-Docker image for squid based on the current alpine version.
+Docker image for squid (https://www.squid-cache.org/) based on the current alpine version. Incl. stdout logging support.
 
 [<img src="https://concourse.emjot.de/api/v1/teams/emjot/pipelines/squid/jobs/build-and-publish/badge">](https://concourse.emjot.de/teams/emjot/pipelines/squid)
 
 Images are published to https://hub.docker.com/repository/docker/emjotde/squid.
-
 
 ## Tags
 
@@ -19,3 +18,7 @@ Static Tag:
 - `SQUID_MAJOR_VERSION-alpineALPINE_MAJOR_AND_MINOR-YYYYmmdd` (e.g. `6-alpine3.22-20250812`) This tag includes the date it was published. If you want to stay on a specific version of squid then sticking to a particular build will meet your needs.
 
 At the moment, we only build for a single alpine version (3.22 as of August 2025). That means when 3.23 is out, we plan to switch to 3.23 and discontinue building/updating images for the older version. If there is a need to support multiple alpine versions, get in touch by creating an issue (and possibly be prepared to create a PR ;-).
+
+## Logging
+
+If your squid is configured to log to `/var/log/squid/access.log` and `/var/log/squid/cache.log`, these files will both be streamed to stdout.
