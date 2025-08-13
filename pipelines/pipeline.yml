@@ -159,7 +159,7 @@ jobs:
           inputs: [ repo ]
           params: { context: 'build', state: error }
 
-      - task: test # FIXME do some actual testing here - or remove
+      - task: test # FIXME do some actual testing here
         image: image
         config:
           platform: linux
