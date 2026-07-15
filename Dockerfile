@@ -1,4 +1,4 @@
-FROM alpine:3.22 AS base
+FROM alpine:3.23 AS base
 LABEL maintainer="Maximilian Herold herold@emjot.de"
 
 # Install Squid and required packages
